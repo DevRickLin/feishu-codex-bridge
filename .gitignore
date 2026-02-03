@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+feishu-codex-bridge
+
+# Environment
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.pid
