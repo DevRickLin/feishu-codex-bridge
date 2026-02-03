@@ -168,7 +168,7 @@ func (c *Client) ThreadStart(ctx context.Context, params *ThreadStartParams) (st
 		return "", fmt.Errorf("failed to parse thread/start result: %w", err)
 	}
 
-	return result.ThreadID, nil
+	return result.Thread.ID, nil
 }
 
 // ThreadResume resumes an existing thread
@@ -190,10 +190,18 @@ func (c *Client) ThreadResume(ctx context.Context, threadID string) (*Thread, er
 
 // TurnStart starts a new turn with a user prompt
 func (c *Client) TurnStart(ctx context.Context, threadID, prompt string, images []string) (string, error) {
+	// Build input array
+	input := []UserInput{
+		{Type: "text", Text: prompt},
+	}
+	// Add images if provided
+	for _, img := range images {
+		input = append(input, UserInput{Type: "localImage", Path: img})
+	}
+
 	params := TurnStartParams{
 		ThreadID: threadID,
-		Prompt:   prompt,
-		Images:   images,
+		Input:    input,
 	}
 
 	resp, err := c.sendRequest("turn/start", params)

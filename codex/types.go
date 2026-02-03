@@ -136,10 +136,20 @@ type ThreadResumeParams struct {
 	ThreadID string `json:"threadId"`
 }
 
+// UserInput represents input content for a turn
+type UserInput struct {
+	Type string `json:"type"`
+	// For type "text"
+	Text string `json:"text,omitempty"`
+	// For type "image"
+	URL string `json:"url,omitempty"`
+	// For type "localImage"
+	Path string `json:"path,omitempty"`
+}
+
 type TurnStartParams struct {
-	ThreadID string   `json:"threadId"`
-	Prompt   string   `json:"prompt"`
-	Images   []string `json:"images,omitempty"`
+	ThreadID string      `json:"threadId"`
+	Input    []UserInput `json:"input"`
 }
 
 type TurnInterruptParams struct {
@@ -149,7 +159,7 @@ type TurnInterruptParams struct {
 // ============ Response Results ============
 
 type ThreadStartResult struct {
-	ThreadID string `json:"threadId"`
+	Thread Thread `json:"thread"`
 }
 
 type ThreadResumeResult struct {
