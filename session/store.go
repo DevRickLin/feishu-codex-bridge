@@ -20,9 +20,9 @@ type Entry struct {
 
 // Store manages session persistence using SQLite
 type Store struct {
-	db              *sql.DB
-	idleMinutes     int
-	resetHour       int
+	db          *sql.DB
+	idleMinutes int
+	resetHour   int
 }
 
 // NewStore creates a new session store

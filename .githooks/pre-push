@@ -1,0 +1,25 @@
+#!/bin/bash
+# Pre-push hook: Run all tests before pushing
+
+set -e
+
+echo "Running pre-push checks..."
+
+# Add common Go paths
+export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+
+# Check if go is available
+if ! command -v go &> /dev/null; then
+    echo "Error: go is not installed"
+    exit 1
+fi
+
+# Run all tests
+echo "Running tests..."
+go test ./... -v
+
+# Run tests with race detector (optional, can be slow)
+# echo "Running tests with race detector..."
+# go test ./... -race
+
+echo "Pre-push checks passed!"

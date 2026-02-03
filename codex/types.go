@@ -255,9 +255,9 @@ type ApprovalResponse struct {
 // ============ Token Usage ============
 
 type TokenUsageUpdatedParams struct {
-	ThreadID    string `json:"threadId"`
-	InputTokens int64  `json:"inputTokens"`
-	OutputTokens int64 `json:"outputTokens"`
+	ThreadID     string `json:"threadId"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
 }
 
 // ============ Event Methods ============

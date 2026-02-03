@@ -272,7 +272,3 @@ func TestHandleLineNotificationDropped(t *testing.T) {
 	line := `{"method": "test/notification", "params": {}}`
 	client.handleLine(line)
 }
-
-
-
-

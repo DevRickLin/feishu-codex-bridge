@@ -1,0 +1,35 @@
+#!/bin/bash
+# Pre-commit hook: Run formatting and linting checks
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Add common Go paths
+export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+
+# Check if go is available
+if ! command -v go &> /dev/null; then
+    echo "Error: go is not installed"
+    exit 1
+fi
+
+# Run go fmt
+echo "Checking formatting..."
+UNFORMATTED=$(gofmt -l .)
+if [ -n "$UNFORMATTED" ]; then
+    echo "Error: The following files are not formatted:"
+    echo "$UNFORMATTED"
+    echo "Run 'go fmt ./...' to fix"
+    exit 1
+fi
+
+# Run go vet
+echo "Running go vet..."
+go vet ./...
+
+# Check for build errors
+echo "Checking build..."
+go build ./...
+
+echo "Pre-commit checks passed!"
