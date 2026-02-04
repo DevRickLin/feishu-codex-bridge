@@ -220,6 +220,168 @@ func (c *Client) RemoveTopic(topic string) error {
 	return c.delete(fmt.Sprintf("/api/topics/%s", url.PathEscape(topic)))
 }
 
+// ============ Memory Operations ============
+
+// MemoryEntry represents a memory entry
+type MemoryEntry struct {
+	ID        int64  `json:"id"`
+	Key       string `json:"key"`
+	Content   string `json:"content"`
+	Category  string `json:"category"`
+	ChatID    string `json:"chat_id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// SaveMemory saves a memory entry
+func (c *Client) SaveMemory(key, content, category, chatID string) error {
+	body := map[string]string{
+		"key":      key,
+		"content":  content,
+		"category": category,
+		"chat_id":  chatID,
+	}
+	return c.post("/api/memory", body, nil)
+}
+
+// GetMemory gets a memory by key
+func (c *Client) GetMemory(key string) (*MemoryEntry, error) {
+	var result struct {
+		Memory *MemoryEntry `json:"memory"`
+	}
+	if err := c.get(fmt.Sprintf("/api/memory/%s", url.PathEscape(key)), &result); err != nil {
+		return nil, err
+	}
+	return result.Memory, nil
+}
+
+// SearchMemory searches memories
+func (c *Client) SearchMemory(query string, limit int) ([]MemoryEntry, error) {
+	var result struct {
+		Memories []MemoryEntry `json:"memories"`
+	}
+	path := fmt.Sprintf("/api/memory/search?query=%s&limit=%d", url.QueryEscape(query), limit)
+	if err := c.get(path, &result); err != nil {
+		return nil, err
+	}
+	return result.Memories, nil
+}
+
+// ListMemories lists memories by category
+func (c *Client) ListMemories(category string, limit int) ([]MemoryEntry, error) {
+	var result struct {
+		Memories []MemoryEntry `json:"memories"`
+	}
+	path := fmt.Sprintf("/api/memory?category=%s&limit=%d", url.QueryEscape(category), limit)
+	if err := c.get(path, &result); err != nil {
+		return nil, err
+	}
+	return result.Memories, nil
+}
+
+// DeleteMemory deletes a memory
+func (c *Client) DeleteMemory(key string) error {
+	return c.delete(fmt.Sprintf("/api/memory/%s", url.PathEscape(key)))
+}
+
+// ============ Scheduled Task Operations ============
+
+// ScheduledTask represents a scheduled task
+type ScheduledTask struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Prompt        string `json:"prompt"`
+	ScheduleType  string `json:"schedule_type"`
+	ScheduleValue string `json:"schedule_value"`
+	ChatID        string `json:"chat_id"`
+	Enabled       bool   `json:"enabled"`
+	NextRun       string `json:"next_run"`
+	LastRun       string `json:"last_run"`
+	LastStatus    string `json:"last_status"`
+	LastError     string `json:"last_error"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+}
+
+// ScheduleTask creates a scheduled task
+func (c *Client) ScheduleTask(name, prompt, scheduleType, scheduleValue, chatID string) error {
+	body := map[string]string{
+		"name":           name,
+		"prompt":         prompt,
+		"schedule_type":  scheduleType,
+		"schedule_value": scheduleValue,
+		"chat_id":        chatID,
+	}
+	return c.post("/api/tasks", body, nil)
+}
+
+// ListTasks lists scheduled tasks
+func (c *Client) ListTasks(enabledOnly bool) ([]ScheduledTask, error) {
+	var result struct {
+		Tasks []ScheduledTask `json:"tasks"`
+	}
+	path := "/api/tasks"
+	if enabledOnly {
+		path += "?enabled_only=true"
+	}
+	if err := c.get(path, &result); err != nil {
+		return nil, err
+	}
+	return result.Tasks, nil
+}
+
+// DeleteTask deletes a task by name
+func (c *Client) DeleteTask(name string) error {
+	return c.delete(fmt.Sprintf("/api/tasks/%s", url.PathEscape(name)))
+}
+
+// ============ Heartbeat Operations ============
+
+// HeartbeatConfig represents a heartbeat configuration
+type HeartbeatConfig struct {
+	ID            int64  `json:"id"`
+	ChatID        string `json:"chat_id"`
+	IntervalMins  int    `json:"interval_mins"`
+	Template      string `json:"template"`
+	ActiveHours   string `json:"active_hours"`
+	Timezone      string `json:"timezone"`
+	Enabled       bool   `json:"enabled"`
+	LastHeartbeat string `json:"last_heartbeat"`
+	CreatedAt     string `json:"created_at"`
+}
+
+// SetHeartbeat sets heartbeat configuration for a chat
+func (c *Client) SetHeartbeat(chatID string, intervalMins int, template, activeHours, timezone string) error {
+	body := map[string]interface{}{
+		"chat_id":       chatID,
+		"interval_mins": intervalMins,
+		"template":      template,
+		"active_hours":  activeHours,
+		"timezone":      timezone,
+	}
+	return c.post("/api/heartbeat", body, nil)
+}
+
+// ListHeartbeats lists heartbeat configurations
+func (c *Client) ListHeartbeats(enabledOnly bool) ([]HeartbeatConfig, error) {
+	var result struct {
+		Heartbeats []HeartbeatConfig `json:"heartbeats"`
+	}
+	path := "/api/heartbeat"
+	if enabledOnly {
+		path += "?enabled_only=true"
+	}
+	if err := c.get(path, &result); err != nil {
+		return nil, err
+	}
+	return result.Heartbeats, nil
+}
+
+// DeleteHeartbeat deletes heartbeat config for a chat
+func (c *Client) DeleteHeartbeat(chatID string) error {
+	return c.delete(fmt.Sprintf("/api/heartbeat/%s", url.PathEscape(chatID)))
+}
+
 // ============ HTTP Helpers ============
 
 func (c *Client) get(path string, result interface{}) error {

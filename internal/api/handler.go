@@ -18,6 +18,7 @@ import (
 type Server struct {
 	messageRepo repo.MessageRepo
 	bufferUC    *usecase.BufferUsecase
+	memoryUC    *usecase.MemoryUsecase
 
 	// Current chat context (updated when processing messages)
 	currentContext *ChatContext
@@ -42,10 +43,11 @@ type Member struct {
 }
 
 // NewServer creates a new API server
-func NewServer(messageRepo repo.MessageRepo, bufferUC *usecase.BufferUsecase, port int) *Server {
+func NewServer(messageRepo repo.MessageRepo, bufferUC *usecase.BufferUsecase, memoryUC *usecase.MemoryUsecase, port int) *Server {
 	return &Server{
 		messageRepo:    messageRepo,
 		bufferUC:       bufferUC,
+		memoryUC:       memoryUC,
 		currentContext: &ChatContext{},
 		port:           port,
 	}
@@ -73,6 +75,19 @@ func (s *Server) Start() error {
 	// Interest topics
 	mux.HandleFunc("/api/topics", s.handleTopics)
 	mux.HandleFunc("/api/topics/", s.handleTopicItem)
+
+	// Memory management
+	mux.HandleFunc("/api/memory", s.handleMemory)
+	mux.HandleFunc("/api/memory/", s.handleMemoryItem)
+	mux.HandleFunc("/api/memory/search", s.handleMemorySearch)
+
+	// Scheduled tasks
+	mux.HandleFunc("/api/tasks", s.handleTasks)
+	mux.HandleFunc("/api/tasks/", s.handleTaskItem)
+
+	// Heartbeat
+	mux.HandleFunc("/api/heartbeat", s.handleHeartbeat)
+	mux.HandleFunc("/api/heartbeat/", s.handleHeartbeatItem)
 
 	// Context
 	mux.HandleFunc("/api/context", s.handleContext)
@@ -415,6 +430,331 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, s.GetContext())
+}
+
+// ============ Memory Handlers ============
+
+func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		category := r.URL.Query().Get("category")
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil {
+				limit = parsed
+			}
+		}
+		entries, err := s.memoryUC.ListMemories(ctx, category, limit)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"memories": entries})
+
+	case http.MethodPost:
+		var req struct {
+			Key      string `json:"key"`
+			Content  string `json:"content"`
+			Category string `json:"category"`
+			ChatID   string `json:"chat_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Key == "" {
+			http.Error(w, "key is required", http.StatusBadRequest)
+			return
+		}
+		if req.Content == "" {
+			http.Error(w, "content is required", http.StatusBadRequest)
+			return
+		}
+		if req.ChatID == "" {
+			req.ChatID = s.GetContext().ChatID
+		}
+		if err := s.memoryUC.SaveMemory(ctx, req.Key, req.Content, req.Category, req.ChatID); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleMemoryItem(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Skip if this is the search endpoint
+	if strings.HasSuffix(r.URL.Path, "/search") {
+		s.handleMemorySearch(w, r)
+		return
+	}
+
+	key := strings.TrimPrefix(r.URL.Path, "/api/memory/")
+	if key == "" {
+		http.Error(w, "key is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		entry, err := s.memoryUC.GetMemory(ctx, key)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		if entry == nil {
+			http.Error(w, "memory not found", http.StatusNotFound)
+			return
+		}
+		s.writeJSON(w, entry)
+
+	case http.MethodDelete:
+		if err := s.memoryUC.DeleteMemory(ctx, key); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "query parameter 'q' is required", http.StatusBadRequest)
+		return
+	}
+
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil {
+			limit = parsed
+		}
+	}
+
+	entries, err := s.memoryUC.SearchMemory(r.Context(), query, limit)
+	if err != nil {
+		s.writeError(w, err)
+		return
+	}
+	s.writeJSON(w, map[string]interface{}{"results": entries})
+}
+
+// ============ Task Handlers ============
+
+func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		enabledOnly := r.URL.Query().Get("enabled") == "true"
+		tasks, err := s.memoryUC.ListTasks(ctx, enabledOnly)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"tasks": tasks})
+
+	case http.MethodPost:
+		var req struct {
+			Name          string `json:"name"`
+			Prompt        string `json:"prompt"`
+			ScheduleType  string `json:"schedule_type"`
+			ScheduleValue string `json:"schedule_value"`
+			ChatID        string `json:"chat_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		if req.Prompt == "" {
+			http.Error(w, "prompt is required", http.StatusBadRequest)
+			return
+		}
+		if req.ChatID == "" {
+			req.ChatID = s.GetContext().ChatID
+		}
+		if req.ChatID == "" {
+			http.Error(w, "chat_id is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.memoryUC.ScheduleTask(ctx, req.Name, req.Prompt, req.ScheduleType, req.ScheduleValue, req.ChatID); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleTaskItem(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
+	if name == "" {
+		http.Error(w, "task name is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		task, err := s.memoryUC.GetTaskByName(ctx, name)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		if task == nil {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		s.writeJSON(w, task)
+
+	case http.MethodDelete:
+		if err := s.memoryUC.DeleteTaskByName(ctx, name); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// ============ Heartbeat Handlers ============
+
+func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		enabledOnly := r.URL.Query().Get("enabled") == "true"
+		configs, err := s.memoryUC.ListHeartbeats(ctx, enabledOnly)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"heartbeats": configs})
+
+	case http.MethodPost:
+		var req struct {
+			ChatID       string `json:"chat_id"`
+			IntervalMins int    `json:"interval_mins"`
+			Template     string `json:"template"`
+			ActiveHours  string `json:"active_hours"`
+			Timezone     string `json:"timezone"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.ChatID == "" {
+			req.ChatID = s.GetContext().ChatID
+		}
+		if req.ChatID == "" {
+			http.Error(w, "chat_id is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.memoryUC.SetHeartbeat(ctx, req.ChatID, req.IntervalMins, req.Template, req.ActiveHours, req.Timezone); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleHeartbeatItem(w http.ResponseWriter, r *http.Request) {
+	if s.memoryUC == nil {
+		http.Error(w, "memory system not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	chatID := strings.TrimPrefix(r.URL.Path, "/api/heartbeat/")
+	if chatID == "" {
+		chatID = s.GetContext().ChatID
+	}
+	if chatID == "" {
+		http.Error(w, "chat_id is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		config, err := s.memoryUC.GetHeartbeat(ctx, chatID)
+		if err != nil {
+			s.writeError(w, err)
+			return
+		}
+		if config == nil {
+			http.Error(w, "heartbeat not found", http.StatusNotFound)
+			return
+		}
+		s.writeJSON(w, config)
+
+	case http.MethodDelete:
+		if err := s.memoryUC.DeleteHeartbeat(ctx, chatID); err != nil {
+			s.writeError(w, err)
+			return
+		}
+		s.writeJSON(w, map[string]interface{}{"success": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // ============ Helpers ============

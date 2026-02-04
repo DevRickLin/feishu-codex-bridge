@@ -175,5 +175,193 @@ func GetToolDefinitions() []ToolDefinition {
 				"properties": map[string]interface{}{},
 			},
 		},
+		// ============ Memory Management Tools ============
+		{
+			Name:        "feishu_save_memory",
+			Description: "Save a memory entry for later retrieval. Use for remembering facts, user preferences, important information, or anything you want to recall later. The key should be descriptive (e.g., 'user_preference_language', 'project_deadline', 'meeting_notes_2024_01_15').",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"key": map[string]interface{}{
+						"type":        "string",
+						"description": "Unique key for this memory (use snake_case, descriptive names)",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "The content to remember",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Category for organizing memories (e.g., 'preference', 'fact', 'note', 'task'). Default: 'note'",
+					},
+				},
+				"required": []string{"key", "content"},
+			},
+		},
+		{
+			Name:        "feishu_get_memory",
+			Description: "Retrieve a specific memory by its key.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"key": map[string]interface{}{
+						"type":        "string",
+						"description": "The key of the memory to retrieve",
+					},
+				},
+				"required": []string{"key"},
+			},
+		},
+		{
+			Name:        "feishu_search_memory",
+			Description: "Search memories by content. Returns memories that match the search query using full-text search.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Search query to find relevant memories",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default 10)",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "feishu_list_memories",
+			Description: "List memories by category. Useful for browsing memories of a specific type.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Category to filter by (leave empty for all categories)",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default 20)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "feishu_delete_memory",
+			Description: "Delete a memory entry by its key.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"key": map[string]interface{}{
+						"type":        "string",
+						"description": "The key of the memory to delete",
+					},
+				},
+				"required": []string{"key"},
+			},
+		},
+		// ============ Scheduled Task Tools ============
+		{
+			Name:        "feishu_schedule_task",
+			Description: "Create a scheduled task that will run at specified times. Use for reminders, periodic reports, or any recurring action. Schedule types: 'once' (ISO timestamp), 'interval' (milliseconds), 'cron' (cron expression like '0 9 * * *' for daily at 9am).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "Unique name for this task",
+					},
+					"prompt": map[string]interface{}{
+						"type":        "string",
+						"description": "The prompt/message to execute when the task runs",
+					},
+					"schedule_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Type of schedule: 'once', 'interval', or 'cron'",
+						"enum":        []string{"once", "interval", "cron"},
+					},
+					"schedule_value": map[string]interface{}{
+						"type":        "string",
+						"description": "Schedule value: ISO timestamp for 'once', milliseconds for 'interval', cron expression for 'cron'",
+					},
+				},
+				"required": []string{"name", "prompt", "schedule_type", "schedule_value"},
+			},
+		},
+		{
+			Name:        "feishu_list_tasks",
+			Description: "List all scheduled tasks.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"enabled_only": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Only show enabled tasks (default true)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "feishu_delete_task",
+			Description: "Delete a scheduled task by name.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "The name of the task to delete",
+					},
+				},
+				"required": []string{"name"},
+			},
+		},
+		// ============ Heartbeat Tools ============
+		{
+			Name:        "feishu_set_heartbeat",
+			Description: "Set up periodic heartbeat messages for a chat. Heartbeats are proactive check-ins that run during specified hours. Use when user says 'check in every hour', 'send daily updates', etc.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"interval_mins": map[string]interface{}{
+						"type":        "integer",
+						"description": "Interval between heartbeats in minutes (default 30)",
+					},
+					"template": map[string]interface{}{
+						"type":        "string",
+						"description": "Message template for heartbeat (optional, system will generate if not provided)",
+					},
+					"active_hours": map[string]interface{}{
+						"type":        "string",
+						"description": "Active hours range like '09:00-18:00' (default '00:00-23:59' for 24/7)",
+					},
+					"timezone": map[string]interface{}{
+						"type":        "string",
+						"description": "Timezone for active hours (default 'Asia/Shanghai')",
+					},
+				},
+			},
+		},
+		{
+			Name:        "feishu_list_heartbeats",
+			Description: "List all heartbeat configurations.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"enabled_only": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Only show enabled heartbeats (default true)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "feishu_delete_heartbeat",
+			Description: "Delete heartbeat configuration for the current chat.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 }

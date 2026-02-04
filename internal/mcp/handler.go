@@ -51,6 +51,31 @@ func (h *Handler) HandleToolCall(name string, args map[string]interface{}) (inte
 		return h.handleRemoveInterestTopic(ctx, args)
 	case "feishu_list_interest_topics":
 		return h.handleListInterestTopics(ctx, args)
+	// Memory tools
+	case "feishu_save_memory":
+		return h.handleSaveMemory(ctx, args)
+	case "feishu_get_memory":
+		return h.handleGetMemory(ctx, args)
+	case "feishu_search_memory":
+		return h.handleSearchMemory(ctx, args)
+	case "feishu_list_memories":
+		return h.handleListMemories(ctx, args)
+	case "feishu_delete_memory":
+		return h.handleDeleteMemory(ctx, args)
+	// Task tools
+	case "feishu_schedule_task":
+		return h.handleScheduleTask(ctx, args)
+	case "feishu_list_tasks":
+		return h.handleListTasks(ctx, args)
+	case "feishu_delete_task":
+		return h.handleDeleteTask(ctx, args)
+	// Heartbeat tools
+	case "feishu_set_heartbeat":
+		return h.handleSetHeartbeat(ctx, args)
+	case "feishu_list_heartbeats":
+		return h.handleListHeartbeats(ctx, args)
+	case "feishu_delete_heartbeat":
+		return h.handleDeleteHeartbeat(ctx, args)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
@@ -249,6 +274,227 @@ func (h *Handler) handleListInterestTopics(ctx *ChatContext, args map[string]int
 	return map[string]interface{}{"topics": topics}, nil
 }
 
+// ============ Memory Handlers ============
+
+func (h *Handler) handleSaveMemory(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	key := getStringArg(args, "key", "")
+	if key == "" {
+		return nil, fmt.Errorf("key is required")
+	}
+
+	content := getStringArg(args, "content", "")
+	if content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+
+	category := getStringArg(args, "category", "note")
+	chatID := ctx.ChatID
+
+	if err := h.client.SaveMemory(key, content, category, chatID); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Memory saved with key: %s", key),
+	}, nil
+}
+
+func (h *Handler) handleGetMemory(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	key := getStringArg(args, "key", "")
+	if key == "" {
+		return nil, fmt.Errorf("key is required")
+	}
+
+	memory, err := h.client.GetMemory(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if memory == nil {
+		return map[string]interface{}{
+			"found":   false,
+			"message": fmt.Sprintf("No memory found with key: %s", key),
+		}, nil
+	}
+
+	return map[string]interface{}{
+		"found":  true,
+		"memory": memory,
+	}, nil
+}
+
+func (h *Handler) handleSearchMemory(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	query := getStringArg(args, "query", "")
+	if query == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
+	limit := getIntArg(args, "limit", 10)
+
+	memories, err := h.client.SearchMemory(query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"memories": memories,
+		"count":    len(memories),
+	}, nil
+}
+
+func (h *Handler) handleListMemories(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	category := getStringArg(args, "category", "")
+	limit := getIntArg(args, "limit", 20)
+
+	memories, err := h.client.ListMemories(category, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"memories": memories,
+		"count":    len(memories),
+	}, nil
+}
+
+func (h *Handler) handleDeleteMemory(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	key := getStringArg(args, "key", "")
+	if key == "" {
+		return nil, fmt.Errorf("key is required")
+	}
+
+	if err := h.client.DeleteMemory(key); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Memory deleted: %s", key),
+	}, nil
+}
+
+// ============ Task Handlers ============
+
+func (h *Handler) handleScheduleTask(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	name := getStringArg(args, "name", "")
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+
+	prompt := getStringArg(args, "prompt", "")
+	if prompt == "" {
+		return nil, fmt.Errorf("prompt is required")
+	}
+
+	scheduleType := getStringArg(args, "schedule_type", "")
+	if scheduleType == "" {
+		return nil, fmt.Errorf("schedule_type is required")
+	}
+
+	scheduleValue := getStringArg(args, "schedule_value", "")
+	if scheduleValue == "" {
+		return nil, fmt.Errorf("schedule_value is required")
+	}
+
+	chatID := ctx.ChatID
+	if chatID == "" {
+		return nil, fmt.Errorf("no chat context available for scheduling task")
+	}
+
+	if err := h.client.ScheduleTask(name, prompt, scheduleType, scheduleValue, chatID); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Task '%s' scheduled with %s schedule", name, scheduleType),
+	}, nil
+}
+
+func (h *Handler) handleListTasks(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	enabledOnly := getBoolArg(args, "enabled_only", true)
+
+	tasks, err := h.client.ListTasks(enabledOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"tasks": tasks,
+		"count": len(tasks),
+	}, nil
+}
+
+func (h *Handler) handleDeleteTask(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	name := getStringArg(args, "name", "")
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+
+	if err := h.client.DeleteTask(name); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Task '%s' deleted", name),
+	}, nil
+}
+
+// ============ Heartbeat Handlers ============
+
+func (h *Handler) handleSetHeartbeat(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	chatID := ctx.ChatID
+	if chatID == "" {
+		return nil, fmt.Errorf("no chat context available for setting heartbeat")
+	}
+
+	intervalMins := getIntArg(args, "interval_mins", 30)
+	template := getStringArg(args, "template", "")
+	activeHours := getStringArg(args, "active_hours", "00:00-23:59")
+	timezone := getStringArg(args, "timezone", "Asia/Shanghai")
+
+	if err := h.client.SetHeartbeat(chatID, intervalMins, template, activeHours, timezone); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Heartbeat set: every %d mins during %s (%s)", intervalMins, activeHours, timezone),
+	}, nil
+}
+
+func (h *Handler) handleListHeartbeats(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	enabledOnly := getBoolArg(args, "enabled_only", true)
+
+	heartbeats, err := h.client.ListHeartbeats(enabledOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"heartbeats": heartbeats,
+		"count":      len(heartbeats),
+	}, nil
+}
+
+func (h *Handler) handleDeleteHeartbeat(ctx *ChatContext, args map[string]interface{}) (interface{}, error) {
+	chatID := ctx.ChatID
+	if chatID == "" {
+		return nil, fmt.Errorf("no chat context available")
+	}
+
+	if err := h.client.DeleteHeartbeat(chatID); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "Heartbeat deleted for current chat",
+	}, nil
+}
+
 // ============ Helpers ============
 
 func getStringArg(args map[string]interface{}, key, defaultValue string) string {
@@ -263,6 +509,13 @@ func getIntArg(args map[string]interface{}, key string, defaultValue int) int {
 		return int(v)
 	}
 	if v, ok := args[key].(int); ok {
+		return v
+	}
+	return defaultValue
+}
+
+func getBoolArg(args map[string]interface{}, key string, defaultValue bool) bool {
+	if v, ok := args[key].(bool); ok {
 		return v
 	}
 	return defaultValue

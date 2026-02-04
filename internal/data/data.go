@@ -15,6 +15,7 @@ type Repositories struct {
 	Codex   repo.CodexRepo
 	Filter  repo.FilterRepo
 	Buffer  repo.BufferRepo
+	Memory  repo.MemoryRepo
 }
 
 // NewRepositories creates all repositories
@@ -38,6 +39,13 @@ func NewRepositories(
 		return nil, err
 	}
 
+	// Memory repository for persistent memory storage
+	memoryDBPath := sessionDBPath[:len(sessionDBPath)-len("sessions.db")] + "memory.db"
+	memoryRepo, err := NewMemoryRepo(memoryDBPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// bufferRepo implements TopicsProvider interface, passed to Moonshot for dynamic topic fetching
 	return &Repositories{
 		Message: NewFeishuRepo(feishuClient),
@@ -45,5 +53,6 @@ func NewRepositories(
 		Codex:   NewCodexRepo(codexClient),
 		Filter:  NewMoonshotRepoWithConfig(moonshotClient, botName, bufferRepo, promptsConfig),
 		Buffer:  bufferRepo,
+		Memory:  memoryRepo,
 	}, nil
 }

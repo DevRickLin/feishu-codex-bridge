@@ -77,8 +77,11 @@ func main() {
 	bufferCfg := usecase.DefaultBufferConfig()
 	bufferUC := usecase.NewBufferUsecase(repos.Buffer, bufferCfg)
 
+	// Initialize Memory usecase
+	memoryUC := usecase.NewMemoryUsecase(repos.Memory)
+
 	// Initialize HTTP API server for feishu-mcp
-	apiServer := api.NewServer(repos.Message, bufferUC, defaultAPIPort)
+	apiServer := api.NewServer(repos.Message, bufferUC, memoryUC, defaultAPIPort)
 	go func() {
 		if err := apiServer.Start(); err != nil {
 			fmt.Printf("[Bridge] API server error: %v\n", err)
@@ -103,6 +106,11 @@ func main() {
 	// Pass codexRepo and filterUC to enable Codex smart digest + Moonshot filtering
 	srv := server.NewFeishuServer(feishuClient, repos.Message, convSvc, bufferUC, repos.Codex, filterUC, apiServer)
 
+	// Initialize and start CronRunner for scheduled tasks and heartbeats
+	cronRunner := service.NewCronRunner(memoryUC, repos.Message, repos.Codex)
+	cronRunner.Start()
+	fmt.Println("[Bridge] CronRunner started")
+
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -110,6 +118,7 @@ func main() {
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down...")
+		cronRunner.Stop()
 		srv.Stop()
 		apiServer.Stop()
 		codexClient.Stop()
