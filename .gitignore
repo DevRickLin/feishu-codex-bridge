@@ -4,11 +4,11 @@ node_modules/
 # Build output
 dist/
 bin/
-bridge
-feishu-bridge
-feishu-mcp
-feishu-codex-bridge
-send-message
+/bridge
+/feishu-bridge
+/feishu-mcp
+/feishu-codex-bridge
+/send-message
 
 # Database
 *.db
