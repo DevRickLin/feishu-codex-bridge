@@ -6,6 +6,8 @@ type FeishuClient interface {
 	Start() error
 	Stop()
 	SendText(chatID, text string) error
+	SendTextWithMentions(chatID, text string, mentions []Mention) error
+	SendTextMentionAll(chatID, text string) error
 	SendRichText(chatID, title string, content [][]map[string]interface{}) error
 	AddReaction(messageID, emojiType string) error
 	RemoveReaction(messageID, reactionID string) error

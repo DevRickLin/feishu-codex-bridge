@@ -1,6 +1,9 @@
 package codex
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // ============ JSON-RPC Base Types ============
 // Note: Codex ACP doesn't include "jsonrpc":"2.0" header
@@ -84,9 +87,9 @@ type ThreadItem struct {
 	// agentMessage
 	Text string `json:"text,omitempty"`
 
-	// reasoning
-	Content string `json:"content,omitempty"`
-	Summary string `json:"summary,omitempty"`
+	// reasoning - can be string or array, use FlexString to handle both
+	Content FlexString `json:"content,omitempty"`
+	Summary FlexString `json:"summary,omitempty"`
 
 	// commandExecution
 	Command string          `json:"command,omitempty"`
@@ -105,6 +108,46 @@ type ThreadItem struct {
 
 	// imageView
 	Path string `json:"path,omitempty"`
+}
+
+// FlexString handles JSON fields that can be either a string or an array of strings
+type FlexString string
+
+func (f *FlexString) UnmarshalJSON(data []byte) error {
+	// Try string first
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexString(s)
+		return nil
+	}
+
+	// Try array of strings
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*f = FlexString(strings.Join(arr, "\n"))
+		return nil
+	}
+
+	// Try array of interfaces (mixed content)
+	var mixed []interface{}
+	if err := json.Unmarshal(data, &mixed); err == nil {
+		var parts []string
+		for _, v := range mixed {
+			switch val := v.(type) {
+			case string:
+				parts = append(parts, val)
+			case map[string]interface{}:
+				// Handle structured content like {type: "text", text: "..."}
+				if text, ok := val["text"].(string); ok {
+					parts = append(parts, text)
+				}
+			}
+		}
+		*f = FlexString(strings.Join(parts, "\n"))
+		return nil
+	}
+
+	return nil // Ignore unparseable content
 }
 
 type ExecutionStatus string

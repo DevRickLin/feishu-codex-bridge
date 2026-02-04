@@ -78,7 +78,7 @@ func TestParseTextContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := client.parseTextContent(tt.input)
+			result := client.parseTextContent(tt.input, nil)
 			if result != tt.expected {
 				t.Errorf("got %q, want %q", result, tt.expected)
 			}
@@ -195,7 +195,7 @@ func TestParsePostContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, images := client.parsePostContent(tt.input)
+			text, images := client.parsePostContent(tt.input, nil)
 			if text != tt.expectedText {
 				t.Errorf("text mismatch: got %q, want %q", text, tt.expectedText)
 			}

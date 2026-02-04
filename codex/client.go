@@ -33,8 +33,11 @@ type Client struct {
 	initialized bool
 	running     bool
 
-	workingDir string
-	model      string
+	workingDir    string
+	model         string
+	systemPrompt  string
+	mcpServerPath string            // Path to the MCP server binary
+	mcpEnvVars    map[string]string // Environment variables for MCP server
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -51,9 +54,27 @@ func NewClient(workingDir, model string) *Client {
 	}
 }
 
+// SetSystemPrompt sets a system prompt to prepend to the first message of each thread
+func (c *Client) SetSystemPrompt(prompt string) {
+	c.systemPrompt = prompt
+}
+
+// SetMCPServer configures the MCP server for Codex
+func (c *Client) SetMCPServer(path string, envVars map[string]string) {
+	c.mcpServerPath = path
+	c.mcpEnvVars = envVars
+}
+
 // Start spawns the Codex app-server process and initializes the connection
 func (c *Client) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
+
+	// Configure MCP server if path is set
+	if c.mcpServerPath != "" {
+		if err := c.configureMCPServer(); err != nil {
+			fmt.Printf("[Codex] Warning: failed to configure MCP server: %v\n", err)
+		}
+	}
 
 	// Build command arguments
 	args := []string{"app-server"}
@@ -101,6 +122,13 @@ func (c *Client) Start(ctx context.Context) error {
 	if err := c.initialize(); err != nil {
 		c.Stop()
 		return fmt.Errorf("failed to initialize: %w", err)
+	}
+
+	// Refresh MCP servers if configured
+	if c.mcpServerPath != "" {
+		if err := c.refreshMCPServers(); err != nil {
+			fmt.Printf("[Codex] Warning: failed to refresh MCP servers: %v\n", err)
+		}
 	}
 
 	fmt.Println("[Codex] Initialized successfully")
@@ -398,4 +426,57 @@ func (c *Client) readStderr() {
 func mustMarshal(v interface{}) json.RawMessage {
 	data, _ := json.Marshal(v)
 	return data
+}
+
+// configureMCPServer adds the feishu-mcp server to Codex configuration
+func (c *Client) configureMCPServer() error {
+	// Build the codex mcp add command
+	args := []string{"mcp", "add", "feishu"}
+
+	// Add environment variables
+	for key, value := range c.mcpEnvVars {
+		args = append(args, "--env", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Add the command separator and the MCP server path
+	args = append(args, "--", c.mcpServerPath)
+
+	fmt.Printf("[Codex] Configuring MCP server: codex %v\n", args)
+
+	// First remove any existing configuration
+	removeCmd := exec.Command("codex", "mcp", "remove", "feishu")
+	removeCmd.Run() // Ignore errors if it doesn't exist
+
+	// Add the MCP server
+	cmd := exec.Command("codex", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to add MCP server: %w, output: %s", err, string(output))
+	}
+
+	fmt.Printf("[Codex] MCP server configured successfully\n")
+	return nil
+}
+
+// refreshMCPServers tells the app-server to reload MCP server configuration
+func (c *Client) refreshMCPServers() error {
+	fmt.Println("[Codex] Refreshing MCP servers...")
+
+	// Send config/mcpServer/reload request
+	resp, err := c.sendRequest("config/mcpServer/reload", nil)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("[Codex] MCP servers refreshed: %s\n", string(resp.Result))
+
+	// Also list the MCP server status to verify
+	statusResp, err := c.sendRequest("mcpServerStatus/list", map[string]interface{}{})
+	if err != nil {
+		fmt.Printf("[Codex] Warning: failed to list MCP server status: %v\n", err)
+	} else {
+		fmt.Printf("[Codex] MCP server status: %s\n", string(statusResp.Result))
+	}
+
+	return nil
 }

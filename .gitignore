@@ -3,7 +3,16 @@ node_modules/
 
 # Build output
 dist/
+bin/
+bridge
+feishu-bridge
+feishu-mcp
 feishu-codex-bridge
+send-message
+
+# Database
+*.db
+*.sqlite
 
 # Environment
 .env
@@ -25,3 +34,6 @@ Thumbs.db
 
 # Debug
 *.pid
+
+# PM2
+ecosystem.config.js
