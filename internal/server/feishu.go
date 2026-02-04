@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/feishu-codex-bridge/feishu"
+	"github.com/anthropics/feishu-codex-bridge/internal/api"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/domain"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/usecase"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/feishu"
 	"github.com/anthropics/feishu-codex-bridge/internal/service"
 )
 
@@ -20,6 +21,9 @@ type FeishuServer struct {
 	convSvc      *service.ConversationService
 	bufferUC     *usecase.BufferUsecase
 	scheduler    *service.DigestScheduler
+
+	// API server for setting context
+	apiServer *api.Server
 
 	// Message deduplication cache
 	seenMsgsMu sync.RWMutex
@@ -34,12 +38,14 @@ func NewFeishuServer(
 	bufferUC *usecase.BufferUsecase,
 	codexRepo repo.CodexRepo,
 	filterUC *usecase.FilterUsecase,
+	apiServer *api.Server,
 ) *FeishuServer {
 	s := &FeishuServer{
 		feishuClient: feishuClient,
 		messageRepo:  messageRepo,
 		convSvc:      convSvc,
 		bufferUC:     bufferUC,
+		apiServer:    apiServer,
 		seenMsgs:     make(map[string]time.Time),
 	}
 
@@ -142,6 +148,32 @@ func (s *FeishuServer) handleMessage(msg *feishu.Message) {
 			return
 		}
 		fmt.Printf("[Server] Processing immediately: %s\n", reason)
+	}
+
+	// Set context for MCP tools before processing
+	if s.apiServer != nil {
+		// Get members for context
+		var contextMembers []api.Member
+		members, err := s.messageRepo.GetChatMembers(ctx, msg.ChatID)
+		if err == nil {
+			for _, m := range members {
+				contextMembers = append(contextMembers, api.Member{ID: m.UserID, Name: m.Name})
+			}
+		}
+
+		chatTypeStr := "p2p"
+		if chatType == domain.ChatTypeGroup {
+			chatTypeStr = "group"
+		}
+
+		s.apiServer.SetContext(&api.ChatContext{
+			ChatID:    msg.ChatID,
+			ChatType:  chatTypeStr,
+			MessageID: msg.MsgID,
+			Members:   contextMembers,
+		})
+		fmt.Printf("[Server] Set context: chatID=%s, chatType=%s, members=%d\n",
+			msg.ChatID, chatTypeStr, len(contextMembers))
 	}
 
 	// Download images

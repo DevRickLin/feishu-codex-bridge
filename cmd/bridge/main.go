@@ -10,17 +10,19 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/anthropics/feishu-codex-bridge/codex"
-	"github.com/anthropics/feishu-codex-bridge/feishu"
+	"github.com/anthropics/feishu-codex-bridge/internal/api"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/usecase"
 	"github.com/anthropics/feishu-codex-bridge/internal/conf"
 	"github.com/anthropics/feishu-codex-bridge/internal/data"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/acp"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/feishu"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/openai"
 	"github.com/anthropics/feishu-codex-bridge/internal/server"
 	"github.com/anthropics/feishu-codex-bridge/internal/service"
-	"github.com/anthropics/feishu-codex-bridge/ipc"
-	"github.com/anthropics/feishu-codex-bridge/moonshot"
 	"github.com/joho/godotenv"
 )
+
+const defaultAPIPort = 9876
 
 func main() {
 	// Load .env file
@@ -36,7 +38,7 @@ func main() {
 
 	// Initialize clients
 	feishuClient := feishu.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
-	codexClient := codex.NewClient(cfg.Codex.WorkingDir, cfg.Codex.Model)
+	codexClient := acp.NewClient(cfg.Codex.WorkingDir, cfg.Codex.Model)
 
 	// Start Codex client
 	ctx := context.Background()
@@ -45,14 +47,14 @@ func main() {
 	}
 	fmt.Println("[Bridge] Codex client started")
 
-	var moonshotClient *moonshot.Client
+	var moonshotClient *openai.Client
 	if cfg.Moonshot.APIKey != "" {
-		moonshotClient = moonshot.NewClient(cfg.Moonshot.APIKey, cfg.Moonshot.Model)
+		moonshotClient = openai.NewClient(cfg.Moonshot.APIKey, cfg.Moonshot.Model)
 		fmt.Println("[Bridge] Moonshot pre-filter enabled")
 	}
 
 	// Initialize repository layer
-	repos, err := data.NewRepositories(feishuClient, codexClient, moonshotClient, cfg.Session.DBPath, cfg.Feishu.BotName)
+	repos, err := data.NewRepositories(feishuClient, codexClient, moonshotClient, cfg.Session.DBPath, cfg.Feishu.BotName, cfg.Prompts)
 	if err != nil {
 		log.Fatalf("Failed to create repositories: %v", err)
 	}
@@ -75,27 +77,31 @@ func main() {
 	bufferCfg := usecase.DefaultBufferConfig()
 	bufferUC := usecase.NewBufferUsecase(repos.Buffer, bufferCfg)
 
-	// Initialize IPC handler
-	dataDir := filepath.Dir(cfg.Session.DBPath)
-	ipcHandler, err := ipc.NewHandler(dataDir, createIPCActionHandler(repos, bufferUC))
-	if err != nil {
-		log.Fatalf("Failed to create IPC handler: %v", err)
-	}
-	ipcHandler.Start(ctx)
-	fmt.Println("[Bridge] IPC handler started")
+	// Initialize HTTP API server for feishu-mcp
+	apiServer := api.NewServer(repos.Message, bufferUC, defaultAPIPort)
+	go func() {
+		if err := apiServer.Start(); err != nil {
+			fmt.Printf("[Bridge] API server error: %v\n", err)
+		}
+	}()
+	fmt.Printf("[Bridge] HTTP API server started on port %d\n", defaultAPIPort)
 
 	// Configure MCP server
 	mcpPath, err := findMCPServerPath()
 	if err != nil {
 		fmt.Printf("[Bridge] Warning: MCP server not found: %v\n", err)
 	} else {
-		codexClient.SetMCPServer(mcpPath, ipcHandler.GetEnvVars())
+		// Pass Bridge API URL to MCP server via environment variable
+		mcpEnvVars := map[string]string{
+			"BRIDGE_API_URL": fmt.Sprintf("http://127.0.0.1:%d", defaultAPIPort),
+		}
+		codexClient.SetMCPServer(mcpPath, mcpEnvVars)
 		fmt.Printf("[Bridge] MCP server configured: %s\n", mcpPath)
 	}
 
 	// Initialize server
 	// Pass codexRepo and filterUC to enable Codex smart digest + Moonshot filtering
-	srv := server.NewFeishuServer(feishuClient, repos.Message, convSvc, bufferUC, repos.Codex, filterUC)
+	srv := server.NewFeishuServer(feishuClient, repos.Message, convSvc, bufferUC, repos.Codex, filterUC, apiServer)
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -105,7 +111,7 @@ func main() {
 		<-sigCh
 		fmt.Println("\nShutting down...")
 		srv.Stop()
-		ipcHandler.Stop()
+		apiServer.Stop()
 		codexClient.Stop()
 		os.Exit(0)
 	}()
@@ -144,97 +150,4 @@ func findMCPServerPath() (string, error) {
 	}
 
 	return "", fmt.Errorf("feishu-mcp not found")
-}
-
-// createIPCActionHandler creates the action handler for IPC requests
-func createIPCActionHandler(repos *data.Repositories, bufferUC *usecase.BufferUsecase) ipc.ActionHandler {
-	return func(chatID, msgID string, action string, args map[string]interface{}) (interface{}, error) {
-		ctx := context.Background()
-
-		switch action {
-		case "get_chat_history":
-			limit := 20
-			if l, ok := args["limit"].(float64); ok {
-				limit = int(l)
-			}
-			messages, err := repos.Message.GetChatHistory(ctx, chatID, limit)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{
-				"messages": messages,
-				"source":   "feishu_api",
-			}, nil
-
-		// Buffer management actions
-		case "add_to_whitelist":
-			chatID, _ := args["chat_id"].(string)
-			reason, _ := args["reason"].(string)
-			return nil, bufferUC.AddToWhitelist(ctx, chatID, reason, "codex")
-
-		case "remove_from_whitelist":
-			chatID, _ := args["chat_id"].(string)
-			return nil, bufferUC.RemoveFromWhitelist(ctx, chatID)
-
-		case "list_whitelist":
-			entries, err := bufferUC.GetWhitelist(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"entries": entries}, nil
-
-		case "add_keyword":
-			keyword, _ := args["keyword"].(string)
-			priority := 1
-			if p, ok := args["priority"].(float64); ok {
-				priority = int(p)
-			}
-			return nil, bufferUC.AddKeyword(ctx, keyword, priority)
-
-		case "remove_keyword":
-			keyword, _ := args["keyword"].(string)
-			return nil, bufferUC.RemoveKeyword(ctx, keyword)
-
-		case "list_keywords":
-			keywords, err := bufferUC.GetKeywords(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"keywords": keywords}, nil
-
-		case "get_buffer_summary":
-			summaries, err := bufferUC.GetBufferSummary(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"summaries": summaries}, nil
-
-		case "get_buffered_messages":
-			chatID, _ := args["chat_id"].(string)
-			messages, err := bufferUC.GetUnprocessedMessages(ctx, chatID)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"messages": messages}, nil
-
-		// Interest topic management
-		case "add_interest_topic":
-			topic, _ := args["topic"].(string)
-			return nil, bufferUC.AddInterestTopic(ctx, topic, "")
-
-		case "remove_interest_topic":
-			topic, _ := args["topic"].(string)
-			return nil, bufferUC.RemoveInterestTopic(ctx, topic)
-
-		case "list_interest_topics":
-			topics, err := bufferUC.GetInterestTopics(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"topics": topics}, nil
-
-		default:
-			return nil, fmt.Errorf("unknown action: %s", action)
-		}
-	}
 }

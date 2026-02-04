@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/anthropics/feishu-codex-bridge/feishu"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/domain"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/feishu"
 )
 
 // feishuRepo implements the Feishu message repository

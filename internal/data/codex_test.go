@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/anthropics/feishu-codex-bridge/codex"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/acp"
 )
 
 func TestConvertEvent_AgentMessageDelta(t *testing.T) {
@@ -13,7 +13,7 @@ func TestConvertEvent_AgentMessageDelta(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	params := codex.AgentMessageDeltaParams{
+	params := acp.AgentMessageDeltaParams{
 		ThreadID: "thread-123",
 		TurnID:   "turn-456",
 		ItemID:   "item-789",
@@ -21,8 +21,8 @@ func TestConvertEvent_AgentMessageDelta(t *testing.T) {
 	}
 	paramsJSON, _ := json.Marshal(params)
 
-	event := codex.Event{
-		Method: codex.MethodAgentMessageDelta,
+	event := acp.Event{
+		Method: acp.MethodAgentMessageDelta,
 		Params: paramsJSON,
 	}
 
@@ -55,15 +55,15 @@ func TestConvertEvent_TurnCompleted(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	params := codex.TurnCompletedParams{
+	params := acp.TurnCompletedParams{
 		ThreadID: "thread-abc",
 		TurnID:   "turn-def",
 		Status:   "completed",
 	}
 	paramsJSON, _ := json.Marshal(params)
 
-	event := codex.Event{
-		Method: codex.MethodTurnCompleted,
+	event := acp.Event{
+		Method: acp.MethodTurnCompleted,
 		Params: paramsJSON,
 	}
 
@@ -88,14 +88,14 @@ func TestConvertEvent_ItemCompleted(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	params := codex.ItemCompletedParams{
+	params := acp.ItemCompletedParams{
 		ThreadID: "thread-item",
 		TurnID:   "turn-item",
 	}
 	paramsJSON, _ := json.Marshal(params)
 
-	event := codex.Event{
-		Method: codex.MethodItemCompleted,
+	event := acp.Event{
+		Method: acp.MethodItemCompleted,
 		Params: paramsJSON,
 	}
 
@@ -117,8 +117,8 @@ func TestConvertEvent_InvalidJSON(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	event := codex.Event{
-		Method: codex.MethodAgentMessageDelta,
+	event := acp.Event{
+		Method: acp.MethodAgentMessageDelta,
 		Params: json.RawMessage(`{invalid json}`),
 	}
 
@@ -134,7 +134,7 @@ func TestConvertEvent_UnknownMethod(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	event := codex.Event{
+	event := acp.Event{
 		Method: "unknown/method",
 		Params: json.RawMessage(`{}`),
 	}
@@ -151,7 +151,7 @@ func TestConvertEvent_ErrorMethod(t *testing.T) {
 		eventsCh: make(chan repo.Event, 10),
 	}
 
-	event := codex.Event{
+	event := acp.Event{
 		Method: "some/error/event",
 		Params: json.RawMessage(`{}`),
 	}

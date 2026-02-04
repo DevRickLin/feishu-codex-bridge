@@ -4,7 +4,8 @@ import (
 	"context"
 
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
-	"github.com/anthropics/feishu-codex-bridge/moonshot"
+	"github.com/anthropics/feishu-codex-bridge/internal/conf"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/openai"
 )
 
 // TopicsProvider provides interest topics interface
@@ -14,13 +15,14 @@ type TopicsProvider interface {
 
 // moonshotRepo implements the Moonshot filter repository
 type moonshotRepo struct {
-	client         *moonshot.Client
+	client         *openai.Client
 	botName        string
 	topicsProvider TopicsProvider
+	promptsConfig  *conf.PromptsConfig
 }
 
 // NewMoonshotRepo creates a Moonshot repository
-func NewMoonshotRepo(client *moonshot.Client) repo.FilterRepo {
+func NewMoonshotRepo(client *openai.Client) repo.FilterRepo {
 	if client == nil {
 		return nil
 	}
@@ -28,7 +30,7 @@ func NewMoonshotRepo(client *moonshot.Client) repo.FilterRepo {
 }
 
 // NewMoonshotRepoWithBotName creates a Moonshot repository with bot name
-func NewMoonshotRepoWithBotName(client *moonshot.Client, botName string) repo.FilterRepo {
+func NewMoonshotRepoWithBotName(client *openai.Client, botName string) repo.FilterRepo {
 	if client == nil {
 		return nil
 	}
@@ -36,11 +38,24 @@ func NewMoonshotRepoWithBotName(client *moonshot.Client, botName string) repo.Fi
 }
 
 // NewMoonshotRepoWithTopics creates a Moonshot repository with bot name and topics provider
-func NewMoonshotRepoWithTopics(client *moonshot.Client, botName string, topicsProvider TopicsProvider) repo.FilterRepo {
+func NewMoonshotRepoWithTopics(client *openai.Client, botName string, topicsProvider TopicsProvider) repo.FilterRepo {
 	if client == nil {
 		return nil
 	}
 	return &moonshotRepo{client: client, botName: botName, topicsProvider: topicsProvider}
+}
+
+// NewMoonshotRepoWithConfig creates a Moonshot repository with full configuration
+func NewMoonshotRepoWithConfig(client *openai.Client, botName string, topicsProvider TopicsProvider, promptsConfig *conf.PromptsConfig) repo.FilterRepo {
+	if client == nil {
+		return nil
+	}
+	return &moonshotRepo{
+		client:         client,
+		botName:        botName,
+		topicsProvider: topicsProvider,
+		promptsConfig:  promptsConfig,
+	}
 }
 
 // ShouldRespond determines if the bot should respond
@@ -52,7 +67,13 @@ func (r *moonshotRepo) ShouldRespond(ctx context.Context, message, history, stra
 		if r.topicsProvider != nil {
 			topics, _ = r.topicsProvider.GetInterestTopics(ctx)
 		}
-		strategy = moonshot.GetListenStrategyWithTopics(r.botName, topics)
+
+		// Use prompts config if available, otherwise use default
+		if r.promptsConfig != nil {
+			strategy = r.promptsConfig.GetFilterStrategy(r.botName, topics)
+		} else {
+			strategy = openai.GetListenStrategyWithTopics(r.botName, topics)
+		}
 	}
 	should, _ := r.client.ShouldRespondWithStrategy(message, history, strategy)
 	return should, nil

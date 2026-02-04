@@ -1,10 +1,11 @@
 package data
 
 import (
-	"github.com/anthropics/feishu-codex-bridge/codex"
-	"github.com/anthropics/feishu-codex-bridge/feishu"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
-	"github.com/anthropics/feishu-codex-bridge/moonshot"
+	"github.com/anthropics/feishu-codex-bridge/internal/conf"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/acp"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/feishu"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/openai"
 )
 
 // Repositories contains all repositories
@@ -19,10 +20,11 @@ type Repositories struct {
 // NewRepositories creates all repositories
 func NewRepositories(
 	feishuClient *feishu.Client,
-	codexClient *codex.Client,
-	moonshotClient *moonshot.Client,
+	codexClient *acp.Client,
+	moonshotClient *openai.Client,
 	sessionDBPath string,
 	botName string,
+	promptsConfig *conf.PromptsConfig,
 ) (*Repositories, error) {
 	sessionRepo, err := NewSessionRepo(sessionDBPath)
 	if err != nil {
@@ -41,7 +43,7 @@ func NewRepositories(
 		Message: NewFeishuRepo(feishuClient),
 		Session: sessionRepo,
 		Codex:   NewCodexRepo(codexClient),
-		Filter:  NewMoonshotRepoWithTopics(moonshotClient, botName, bufferRepo),
+		Filter:  NewMoonshotRepoWithConfig(moonshotClient, botName, bufferRepo, promptsConfig),
 		Buffer:  bufferRepo,
 	}, nil
 }

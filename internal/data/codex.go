@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/feishu-codex-bridge/codex"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
+	"github.com/anthropics/feishu-codex-bridge/internal/infra/acp"
 )
 
 // codexRepo implements the Codex repository
 type codexRepo struct {
-	client   *codex.Client
+	client   *acp.Client
 	eventsCh chan repo.Event
 }
 
 // NewCodexRepo creates a new Codex repository
-func NewCodexRepo(client *codex.Client) repo.CodexRepo {
+func NewCodexRepo(client *acp.Client) repo.CodexRepo {
 	r := &codexRepo{
 		client:   client,
 		eventsCh: make(chan repo.Event, 100),
@@ -70,10 +70,10 @@ func (r *codexRepo) forwardEvents() {
 	}
 }
 
-func (r *codexRepo) convertEvent(event codex.Event) *repo.Event {
+func (r *codexRepo) convertEvent(event acp.Event) *repo.Event {
 	switch event.Method {
-	case codex.MethodAgentMessageDelta:
-		var params codex.AgentMessageDeltaParams
+	case acp.MethodAgentMessageDelta:
+		var params acp.AgentMessageDeltaParams
 		if err := json.Unmarshal(event.Params, &params); err != nil {
 			fmt.Printf("[CodexRepo] Failed to parse agent delta params: %v\n", err)
 			return nil
@@ -87,8 +87,8 @@ func (r *codexRepo) convertEvent(event codex.Event) *repo.Event {
 			},
 		}
 
-	case codex.MethodTurnCompleted:
-		var params codex.TurnCompletedParams
+	case acp.MethodTurnCompleted:
+		var params acp.TurnCompletedParams
 		if err := json.Unmarshal(event.Params, &params); err != nil {
 			fmt.Printf("[CodexRepo] Failed to parse turn completed params: %v\n", err)
 			return nil
@@ -100,8 +100,8 @@ func (r *codexRepo) convertEvent(event codex.Event) *repo.Event {
 			Data:     &repo.TurnCompleteData{},
 		}
 
-	case codex.MethodItemCompleted:
-		var params codex.ItemCompletedParams
+	case acp.MethodItemCompleted:
+		var params acp.ItemCompletedParams
 		if err := json.Unmarshal(event.Params, &params); err != nil {
 			fmt.Printf("[CodexRepo] Failed to parse item completed params: %v\n", err)
 			return nil

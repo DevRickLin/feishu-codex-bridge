@@ -24,8 +24,11 @@ type Config struct {
 	// Session configuration
 	Session SessionConfig
 
-	// Prompt configuration
+	// Prompt configuration (legacy, kept for backward compatibility)
 	Prompt PromptConfigValues
+
+	// Prompts configuration (loaded from YAML)
+	Prompts *PromptsConfig
 
 	// MCP configuration
 	MCP MCPConfig
@@ -130,6 +133,18 @@ func LoadFromEnv() *Config {
 		workingDir = "."
 	}
 
+	// Load prompts from YAML
+	promptsConfigPath := os.Getenv("PROMPTS_CONFIG_PATH")
+	promptsConfig, _ := LoadPromptsConfig(promptsConfigPath)
+
+	// Override history settings from env if specified
+	if maxHistoryCount != 15 {
+		promptsConfig.History.MaxCount = maxHistoryCount
+	}
+	if maxHistoryMinutes != 120 {
+		promptsConfig.History.MaxMinutes = maxHistoryMinutes
+	}
+
 	return &Config{
 		Feishu: FeishuConfig{
 			AppID:     os.Getenv("FEISHU_APP_ID"),
@@ -150,9 +165,10 @@ func LoadFromEnv() *Config {
 			ResetHour:   sessionResetHr,
 		},
 		Prompt: PromptConfigValues{
-			MaxHistoryCount:   maxHistoryCount,
-			MaxHistoryMinutes: maxHistoryMinutes,
+			MaxHistoryCount:   promptsConfig.History.MaxCount,
+			MaxHistoryMinutes: promptsConfig.History.MaxMinutes,
 		},
+		Prompts: promptsConfig,
 		MCP: MCPConfig{
 			ServerPath: mcpServerPath,
 		},
@@ -170,10 +186,22 @@ func (c *SessionConfig) ToSessionConfig() domain.SessionConfig {
 
 // ToPromptConfig converts to prompt configuration
 func (c *Config) ToPromptConfig() usecase.PromptConfig {
-	cfg := usecase.DefaultPromptConfig
-	cfg.MaxHistoryCount = c.Prompt.MaxHistoryCount
-	cfg.MaxHistoryMinutes = c.Prompt.MaxHistoryMinutes
-	return cfg
+	if c.Prompts == nil {
+		cfg := usecase.DefaultPromptConfig
+		cfg.MaxHistoryCount = c.Prompt.MaxHistoryCount
+		cfg.MaxHistoryMinutes = c.Prompt.MaxHistoryMinutes
+		return cfg
+	}
+
+	return usecase.PromptConfig{
+		SystemPrompt:        c.Prompts.Codex.SystemPrompt,
+		HistoryMarker:       c.Prompts.Codex.HistoryMarker,
+		CurrentMarker:       c.Prompts.Codex.CurrentMarker,
+		MemberListHeader:    c.Prompts.Codex.MemberListHeader,
+		ChatContextTemplate: c.Prompts.Codex.ChatContextTemplate,
+		MaxHistoryCount:     c.Prompts.History.MaxCount,
+		MaxHistoryMinutes:   c.Prompts.History.MaxMinutes,
+	}
 }
 
 // Validate validates the configuration
