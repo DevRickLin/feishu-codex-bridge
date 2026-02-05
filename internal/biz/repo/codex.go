@@ -1,6 +1,9 @@
 package repo
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // CodexRepo is the Codex interaction interface
 type CodexRepo interface {
@@ -18,6 +21,9 @@ type CodexRepo interface {
 
 	// Events gets the event channel
 	Events() <-chan Event
+
+	// DebugConversation runs a complete conversation synchronously for debugging
+	DebugConversation(ctx context.Context, prompt string, timeout time.Duration) (response string, threadID string, err error)
 }
 
 // Event represents a Codex event

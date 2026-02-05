@@ -213,7 +213,8 @@ type ThreadResumeResult struct {
 }
 
 type TurnStartResult struct {
-	TurnID string `json:"turnId"`
+	TurnID string `json:"turnId,omitempty"`
+	Turn   *Turn  `json:"turn,omitempty"` // Alternative format: result.turn.id
 }
 
 // ============ Event Types (Server Notifications) ============

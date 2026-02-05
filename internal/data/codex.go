@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
 	"github.com/anthropics/feishu-codex-bridge/internal/infra/acp"
@@ -54,6 +55,11 @@ func (r *codexRepo) Stop() {
 // Events returns the event channel
 func (r *codexRepo) Events() <-chan repo.Event {
 	return r.eventsCh
+}
+
+// DebugConversation runs a complete conversation synchronously for debugging
+func (r *codexRepo) DebugConversation(ctx context.Context, prompt string, timeout time.Duration) (response string, threadID string, err error) {
+	return r.client.DebugConversation(ctx, prompt, timeout)
 }
 
 // forwardEvents forwards Codex events

@@ -74,6 +74,10 @@ func (m *mockCodexRepo) Events() <-chan repo.Event {
 	return m.events
 }
 
+func (m *mockCodexRepo) DebugConversation(ctx context.Context, prompt string, timeout time.Duration) (string, string, error) {
+	return "mock response", m.threadID, nil
+}
+
 type mockSessionRepo struct {
 	sessions map[string]*domain.Session
 	mu       sync.Mutex

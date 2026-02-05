@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/domain"
 	"github.com/anthropics/feishu-codex-bridge/internal/biz/repo"
@@ -19,6 +20,7 @@ type Server struct {
 	messageRepo repo.MessageRepo
 	bufferUC    *usecase.BufferUsecase
 	memoryUC    *usecase.MemoryUsecase
+	codexRepo   repo.CodexRepo
 
 	// Current chat context (updated when processing messages)
 	currentContext *ChatContext
@@ -43,11 +45,12 @@ type Member struct {
 }
 
 // NewServer creates a new API server
-func NewServer(messageRepo repo.MessageRepo, bufferUC *usecase.BufferUsecase, memoryUC *usecase.MemoryUsecase, port int) *Server {
+func NewServer(messageRepo repo.MessageRepo, bufferUC *usecase.BufferUsecase, memoryUC *usecase.MemoryUsecase, codexRepo repo.CodexRepo, port int) *Server {
 	return &Server{
 		messageRepo:    messageRepo,
 		bufferUC:       bufferUC,
 		memoryUC:       memoryUC,
+		codexRepo:      codexRepo,
 		currentContext: &ChatContext{},
 		port:           port,
 	}
@@ -91,6 +94,9 @@ func (s *Server) Start() error {
 
 	// Context
 	mux.HandleFunc("/api/context", s.handleContext)
+
+	// Debug endpoint for direct Codex communication
+	mux.HandleFunc("/api/debug/codex", s.handleDebugCodex)
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -777,4 +783,62 @@ func ConvertMembers(members []domain.Member) []Member {
 		result[i] = Member{ID: m.UserID, Name: m.Name}
 	}
 	return result
+}
+
+// ============ Debug Handlers ============
+
+// DebugCodexRequest is the request for direct Codex communication
+type DebugCodexRequest struct {
+	Prompt  string `json:"prompt"`
+	Timeout int    `json:"timeout"` // timeout in seconds, default 120
+}
+
+// DebugCodexResponse is the response from Codex
+type DebugCodexResponse struct {
+	ThreadID string `json:"thread_id"`
+	Response string `json:"response"`
+	Error    string `json:"error,omitempty"`
+}
+
+func (s *Server) handleDebugCodex(w http.ResponseWriter, r *http.Request) {
+	if s.codexRepo == nil {
+		http.Error(w, "codex not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DebugCodexRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Prompt == "" {
+		http.Error(w, "prompt is required", http.StatusBadRequest)
+		return
+	}
+
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = 120
+	}
+
+	ctx := r.Context()
+
+	// Use the debug conversation method that polls for completion
+	response, threadID, err := s.codexRepo.DebugConversation(ctx, req.Prompt, time.Duration(timeout)*time.Second)
+
+	result := DebugCodexResponse{
+		ThreadID: threadID,
+		Response: response,
+	}
+	if err != nil {
+		result.Error = err.Error()
+	}
+
+	s.writeJSON(w, result)
 }

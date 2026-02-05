@@ -105,6 +105,10 @@ func (m *mockCodexRepo) Events() <-chan repo.Event {
 	return m.events
 }
 
+func (m *mockCodexRepo) DebugConversation(ctx context.Context, prompt string, timeout time.Duration) (string, string, error) {
+	return "mock response", "mock-thread", nil
+}
+
 // Tests
 
 func TestResolveThread_NewSession(t *testing.T) {

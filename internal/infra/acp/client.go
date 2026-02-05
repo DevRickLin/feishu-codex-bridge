@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -70,6 +71,7 @@ func (c *Client) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	// Configure MCP server if path is set
+	fmt.Printf("[Codex] mcpServerPath=%q\n", c.mcpServerPath)
 	if c.mcpServerPath != "" {
 		if err := c.configureMCPServer(); err != nil {
 			fmt.Printf("[Codex] Warning: failed to configure MCP server: %v\n", err)
@@ -246,7 +248,13 @@ func (c *Client) TurnStart(ctx context.Context, threadID, prompt string, images 
 		return "", fmt.Errorf("failed to parse turn/start result: %w", err)
 	}
 
-	return result.TurnID, nil
+	// Handle both formats: turnId at root level or turn.id nested
+	turnID := result.TurnID
+	if turnID == "" && result.Turn != nil {
+		turnID = result.Turn.ID
+	}
+
+	return turnID, nil
 }
 
 // TurnInterrupt interrupts the current turn
@@ -254,6 +262,77 @@ func (c *Client) TurnInterrupt(ctx context.Context, threadID string) error {
 	params := TurnInterruptParams{ThreadID: threadID}
 	_, err := c.sendRequest("turn/interrupt", params)
 	return err
+}
+
+// DebugConversation runs a complete conversation and returns the response synchronously.
+// This bypasses the normal event channel and is meant for debugging purposes only.
+// It creates a dedicated event collector to capture the response.
+func (c *Client) DebugConversation(ctx context.Context, prompt string, timeout time.Duration) (response string, threadID string, err error) {
+	// Create a new thread
+	threadID, err = c.ThreadStart(ctx, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create thread: %w", err)
+	}
+
+	// Start turn
+	_, err = c.TurnStart(ctx, threadID, prompt, nil)
+	if err != nil {
+		return "", threadID, fmt.Errorf("failed to start turn: %w", err)
+	}
+
+	// Poll by resuming thread until turn is complete
+	startTime := time.Now()
+	pollInterval := 2 * time.Second
+
+	for {
+		if time.Since(startTime) > timeout {
+			return "", threadID, fmt.Errorf("timeout waiting for response")
+		}
+
+		time.Sleep(pollInterval)
+
+		// Resume thread to get current state
+		thread, err := c.ThreadResume(ctx, threadID)
+		if err != nil {
+			continue
+		}
+
+		// Check the latest turn for completion
+		if len(thread.Turns) > 0 {
+			latestTurn := thread.Turns[len(thread.Turns)-1]
+
+			// Only consider complete if we have an agentMessage (not just userMessage)
+			hasAgentMessage := false
+			for _, item := range latestTurn.Items {
+				if item.Type == "agentMessage" {
+					hasAgentMessage = true
+					break
+				}
+			}
+
+			if latestTurn.Status == "completed" && hasAgentMessage {
+				// Collect response from items
+				var responseBuilder strings.Builder
+				for _, item := range latestTurn.Items {
+					if item.Type == "agentMessage" && item.Text != "" {
+						responseBuilder.WriteString(item.Text)
+					}
+				}
+				response = responseBuilder.String()
+				if latestTurn.Status == "failed" && latestTurn.Error != nil {
+					return response, threadID, fmt.Errorf("turn failed: %s - %s", latestTurn.Error.Type, latestTurn.Error.Message)
+				}
+				return response, threadID, nil
+			} else if latestTurn.Status == "failed" {
+				errMsg := "unknown error"
+				if latestTurn.Error != nil {
+					errMsg = fmt.Sprintf("%s: %s", latestTurn.Error.Type, latestTurn.Error.Message)
+				}
+				return "", threadID, fmt.Errorf("turn failed: %s", errMsg)
+			}
+			// Status is inProgress or completed without agentMessage - keep polling
+		}
+	}
 }
 
 // RespondToApproval responds to an approval request from the server

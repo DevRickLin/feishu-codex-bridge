@@ -40,7 +40,20 @@ func main() {
 	feishuClient := feishu.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
 	codexClient := acp.NewClient(cfg.Codex.WorkingDir, cfg.Codex.Model)
 
-	// Start Codex client
+	// Configure MCP server BEFORE starting Codex client
+	mcpPath, err := findMCPServerPath()
+	if err != nil {
+		fmt.Printf("[Bridge] Warning: MCP server not found: %v\n", err)
+	} else {
+		// Pass Bridge API URL to MCP server via environment variable
+		mcpEnvVars := map[string]string{
+			"BRIDGE_API_URL": fmt.Sprintf("http://127.0.0.1:%d", defaultAPIPort),
+		}
+		codexClient.SetMCPServer(mcpPath, mcpEnvVars)
+		fmt.Printf("[Bridge] MCP server configured: %s\n", mcpPath)
+	}
+
+	// Start Codex client (will configure MCP if path was set above)
 	ctx := context.Background()
 	if err := codexClient.Start(ctx); err != nil {
 		log.Fatalf("Failed to start Codex client: %v", err)
@@ -81,26 +94,13 @@ func main() {
 	memoryUC := usecase.NewMemoryUsecase(repos.Memory)
 
 	// Initialize HTTP API server for feishu-mcp
-	apiServer := api.NewServer(repos.Message, bufferUC, memoryUC, defaultAPIPort)
+	apiServer := api.NewServer(repos.Message, bufferUC, memoryUC, repos.Codex, defaultAPIPort)
 	go func() {
 		if err := apiServer.Start(); err != nil {
 			fmt.Printf("[Bridge] API server error: %v\n", err)
 		}
 	}()
 	fmt.Printf("[Bridge] HTTP API server started on port %d\n", defaultAPIPort)
-
-	// Configure MCP server
-	mcpPath, err := findMCPServerPath()
-	if err != nil {
-		fmt.Printf("[Bridge] Warning: MCP server not found: %v\n", err)
-	} else {
-		// Pass Bridge API URL to MCP server via environment variable
-		mcpEnvVars := map[string]string{
-			"BRIDGE_API_URL": fmt.Sprintf("http://127.0.0.1:%d", defaultAPIPort),
-		}
-		codexClient.SetMCPServer(mcpPath, mcpEnvVars)
-		fmt.Printf("[Bridge] MCP server configured: %s\n", mcpPath)
-	}
 
 	// Initialize server
 	// Pass codexRepo and filterUC to enable Codex smart digest + Moonshot filtering
